@@ -52,7 +52,7 @@
     - name: Start jack
       become: false
       shell: |
-        jackd -d alsa -d hw:2,0 > "{{ remote_app_dir }}/logs/jackd.log" 2>&1 &
+        jackd -d alsa -d hw:2,0
       async: 2592000
       poll: 0
 
@@ -63,7 +63,7 @@
     - name: Start p2psc
       become: false
       shell: |
-        {{ p2psc_dir }} > "{{ remote_app_dir }}/logs/p2psc.log" 2>&1 &
+        {{ p2psc_dir }}
       async: 2592000
       poll: 0
 
@@ -85,7 +85,6 @@
               DISPLAY=:0 \
               XAUTHORITY="/home/{{ gui_user }}/.Xauthority" \
               nohup python3 -u "{{ remote_app_dir }}/Python Interfaces/PythonReceiver.py" \
-              > "{{ remote_app_dir }}/logs/PythonReceiver.log" 2>&1 &
             '
           async: 2592000
           poll: 0
@@ -99,7 +98,6 @@
               DISPLAY=":0" \
               XAUTHORITY="/home/{{ ansible_user }}/.Xauthority" \
               nohup sclang "{{ remote_app_dir }}/SuperCollider Functions/GranSynthReceiverForBike.scd" \
-              > "{{ remote_app_dir }}/logs/GranSynthReceiver.log" 2>&1 &
           async: 2592000
           poll: 0
 
@@ -117,7 +115,6 @@
               DISPLAY=:0 \
               XAUTHORITY="/home/{{ gui_user }}/.Xauthority" \
               nohup python3 -u "{{ remote_app_dir }}/Python Interfaces/PythonHost.py" \
-              > "{{ remote_app_dir }}/logs/PythonHost.log" 2>&1 &
             '
           async: 2592000
           poll: 0
@@ -131,6 +128,5 @@
               DISPLAY=":0" \
               XAUTHORITY="/home/{{ ansible_user }}/.Xauthority" \
               nohup sclang "{{ remote_app_dir }}/SuperCollider Functions/GranSynthHostFinal.scd" \
-              > "{{ remote_app_dir }}/logs/GranSynthHostFinal.log" 2>&1 &
           async: 2592000
           poll: 0
