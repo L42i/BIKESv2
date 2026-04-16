@@ -8,6 +8,7 @@ s.waitForBoot({
 
     user = "whoami".unixCmdGetStdOut;
 
+
     if(user.contains("bikes2")) {
         ~host = "2";
         filename = "BassSoundC1.wav";
@@ -23,8 +24,10 @@ s.waitForBoot({
                 filename = "PadSoundC4.wav";
                 rootNote = 60;
             } {
-                // Fallback just in case
-                ~host = "Peer_" ++ 1000.rand;
+                // FALLBACK FIX: Use the actual computer's network name
+                ~host = "hostname".unixCmdGetStdOut.replace("\n", "");
+                if(~host.isEmpty) { ~host = "127.0.0.1" }; // Safe localhost fallback
+
                 filename = "PadSoundC4.wav";
                 rootNote = 60;
             }
@@ -117,30 +120,42 @@ s.waitForBoot({
         ]).register;
     };
 
-    // --- 5. Network ---
+
+// --- 5. Network Discovery ---
+    // We leave P2PSC running purely so the Host can discover this node's name
     fork {
         p = P2PSC();
         p.sync;
         p.setName(~host);
         p.sync;
         0.2.wait;
-
-        p.addPath({ |msg|
-            var deg = msg[3].asInteger;
-            if(deg > 0) {
-                { ~playNote.value(msg[1], msg[2], deg) }.defer;
-            } {
-                {
-                    if(~activeSynth.notNil) { ~activeSynth.set(\gate, 0); ~activeSynth = nil; };
-                }.defer;
-            };
-        }, "/remoteChord");
-
         p.sync;
-        "✅ P2PSC Receiver Ready! Node assigned as: %".format(~host).postln;
+        "? P2PSC Receiver Ready! Node assigned as: %".format(~host).postln;
     };
 
-    // --- 6. Pygame Harmony Control ---
+    // --- 6. OSC Listeners ---
+
+    // A. Listen for the Host's remote chord updates over raw UDP
+    OSCdef(\remoteChordListener, { |msg|
+        var root = msg[1];
+        var scale = msg[2];
+        var deg = msg[3].asInteger;
+
+        if(deg > 0) {
+            // Silently update the musical context, DO NOT trigger a synth
+            ~currentRoot = root.asSymbol;
+            ~currentScale = scale.asSymbol;
+            ~currentDegree = deg;
+        } {
+            // deg == 0: The Host turned off the chord.
+            // Kill the local harmony if it is currently playing so it doesn't drone on alone.
+            {
+                if(~localSynth.notNil) { ~localSynth.set(\gate, 0); ~localSynth = nil; };
+            }.defer;
+        };
+    }, "/remoteChord");
+
+    // B. Listen for Pygame's local harmony buttons
     OSCdef(\localRelay, { |msg|
         var btnIdx = msg[1].asInteger;
         var isOn   = msg[2].asInteger;
@@ -153,5 +168,4 @@ s.waitForBoot({
             }.defer;
         };
     }, "/localChord");
-});
-)
+}))
