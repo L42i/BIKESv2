@@ -1,5 +1,4 @@
 import pygame
-import sys
 import threading
 from pythonosc import udp_client, dispatcher, osc_server
 
@@ -37,23 +36,24 @@ server = osc_server.ThreadingOSCUDPServer(("0.0.0.0", 57121), disp)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 
 # ---------------------------------------------------------------------------
-# PALETTE  (identical to host)
+# PALETTE
 # ---------------------------------------------------------------------------
 C_BG      = (247, 236, 203)
 C_SURFACE = (255, 255, 255)
 C_BORDER  = (200, 196, 190)
-C_INK     = ( 26,  25,  22)
-C_PRESS    = (1, 24, 87)
+C_INK     = (26, 25, 22)
+C_PRESS   = (1, 24, 87)
 C_MUTED   = (136, 135, 128)
-C_ACCENT  = (252, 226, 28)   # teal — active label
+C_ACCENT  = (252, 226, 28)
 C_ACT_SUB = (100, 160, 130)
 C_STATUS_BG  = (255, 255, 255)
 C_STATUS_TXT = C_ACCENT
 
 # ---------------------------------------------------------------------------
 pygame.init()
-W, H = 900, 640
-screen = pygame.display.set_mode((W, H))
+info = pygame.display.Info()
+W, H = info.current_w, info.current_h
+screen = pygame.display.set_mode((W, H), pygame.FULLSCREEN)
 pygame.display.set_caption("Voice Pad — Receiver")
 pygame.mouse.set_visible(False)
 clock = pygame.time.Clock()
@@ -73,7 +73,7 @@ def pad_rects():
     pw = (gw - GAP) // 2
     ph = (gh - GAP) // 2
     return [
-        pygame.Rect(MARGIN + (i%2)*(pw+GAP), HEADER + (i//2)*(ph+GAP), pw, ph)
+        pygame.Rect(MARGIN + (i % 2) * (pw + GAP), HEADER + (i // 2) * (ph + GAP), pw, ph)
         for i in range(4)
     ]
 
@@ -103,22 +103,35 @@ def toggle_pad(i):
 running = True
 while running:
     screen.fill(C_BG)
-    mx, my = pygame.mouse.get_pos()
-    rects  = pad_rects()
+    rects = pad_rects()
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        if event.type == pygame.MOUSEBUTTONDOWN:
+
+        elif event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.FINGERDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                tx, ty = event.pos
+            else:
+                tx = int(event.x * W)
+                ty = int(event.y * H)
+
             for i, rect in enumerate(rects):
-                if rect.collidepoint(mx, my):
+                if rect.collidepoint(tx, ty):
                     toggle_pad(i)
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_1: toggle_pad(0)
-            if event.key == pygame.K_2: toggle_pad(1)
-            if event.key == pygame.K_3: toggle_pad(2)
-            if event.key == pygame.K_4: toggle_pad(3)
-            if event.key == pygame.K_ESCAPE: running = False
+                    break
+
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_1:
+                toggle_pad(0)
+            elif event.key == pygame.K_2:
+                toggle_pad(1)
+            elif event.key == pygame.K_3:
+                toggle_pad(2)
+            elif event.key == pygame.K_4:
+                toggle_pad(3)
+            elif event.key == pygame.K_ESCAPE:
+                running = False
 
     # --- Status bar ---
     status_rect = pygame.Rect(MARGIN, 16, W - 2*MARGIN, 36)
@@ -134,10 +147,9 @@ while running:
     # --- Draw pads ---
     for i, rect in enumerate(rects):
         is_active = (active_button == i)
-        is_hover  = rect.collidepoint(mx, my) and not is_active
 
-        bg  = C_PRESS    if is_active else (C_BORDER if is_hover else C_SURFACE)
-        bdr = C_PRESS    if is_active else (C_MUTED  if is_hover else C_BORDER)
+        bg  = C_PRESS if is_active else C_SURFACE
+        bdr = C_PRESS if is_active else C_BORDER
 
         draw_rounded_rect(screen, bg, rect, 10, 2, bdr)
 
@@ -147,17 +159,19 @@ while running:
         screen.blit(f_txt, (rect.x + 18, rect.y + 16))
 
         # Key number hint (top-right)
-        k_txt = font_func.render(str(i+1), True, C_MUTED if not is_active else (80, 110, 95))
+        k_txt = font_func.render(str(i + 1), True, C_MUTED if not is_active else (80, 110, 95))
         screen.blit(k_txt, (rect.right - 30, rect.y + 16))
 
         # Note name (centre)
         n_col = (255, 255, 255) if is_active else C_INK
         n_txt = font_note.render(get_note_label(i), True, n_col)
-        screen.blit(n_txt, (rect.centerx - n_txt.get_width()//2,
-                             rect.centery - n_txt.get_height()//2))
+        screen.blit(
+            n_txt,
+            (rect.centerx - n_txt.get_width() // 2,
+             rect.centery - n_txt.get_height() // 2)
+        )
 
     pygame.display.flip()
     clock.tick(60)
 
 pygame.quit()
-sys.exit()

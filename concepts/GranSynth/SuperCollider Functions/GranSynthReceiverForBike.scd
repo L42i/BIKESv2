@@ -38,8 +38,26 @@ s.waitForBoot({
     path = ~absolutePrefix +/+ "Audio Files" +/+ filename;
     b = Buffer.readChannel(s, path, channels: [0]);
 
-    // --- 3. SynthDef ---
-    SynthDef.new(\gs, {
+    // --- 3. Remote pygame target mapping ---
+    // CHANGE THESE TO THE ACTUAL MACHINE RUNNING PYGAME FOR EACH BIKE
+    if(~host == "2") {
+        ~pygameAddr = NetAddr("10.10.10.12", 57121);
+    };
+    if(~host == "3") {
+        ~pygameAddr = NetAddr("10.10.10.13", 57121);
+    };
+    if(~host == "4") {
+        ~pygameAddr = NetAddr("10.10.10.14", 57121);
+    };
+
+    if(~pygameAddr.notNil) {
+        ("pygame target for node " ++ ~host ++ ": " ++ ~pygameAddr.hostname ++ ":" ++ ~pygameAddr.port).postln;
+    } {
+        ("warning: no pygame target set for node " ++ ~host).postln;
+    };
+
+    // --- 4. SynthDef ---
+    SynthDef(\gs, {
         arg sync=0, dens=60, dur=0.4, durRand=0.5, durHz=0.3, buf=0,
         rate=1, pos=0.1, posSpeed=0.1, posRand=0.05,
         grainEnv=(-1), pan=0, panHz=0.1, panRand=0,
@@ -61,7 +79,7 @@ s.waitForBoot({
 
     s.sync;
 
-    // --- 4. Logic & Context ---
+    // --- 5. Musical Context ---
     ~noteMap = (
         'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
         'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
@@ -74,43 +92,13 @@ s.waitForBoot({
         'Mixolydian': [0, 2, 4, 5, 7, 9, 10]
     );
 
-    ~activeSynth = nil;
     ~localSynth = nil;
 
     ~currentRoot = 'C';
     ~currentScale = 'Major';
     ~currentDegree = 1;
 
-    // remote chord synth
-    ~playNote = { |rootName, scaleName, degree|
-        var rootMidi, noteMidi, ratio;
-
-        ~currentRoot = rootName.asSymbol;
-        ~currentScale = scaleName.asSymbol;
-        ~currentDegree = degree.asInteger;
-
-        rootMidi = rootNote + ~noteMap[~currentRoot];
-        noteMidi = rootMidi + ~scales[~currentScale][~currentDegree - 1];
-        ratio = (noteMidi - rootNote).midiratio;
-
-        ("playNote -> root: " ++ rootName ++ " scale: " ++ scaleName ++ " degree: " ++ degree ++ " ratio: " ++ ratio).postln;
-
-        if (~activeSynth.notNil && { ~activeSynth.isPlaying }) {
-            ~activeSynth.set(\rate, ratio);
-        } {
-            ~activeSynth = Synth(\gs, [
-                \buf, b,
-                \rate, ratio,
-                \dens, currentDens,
-                \dur, currentDur,
-                \pos, currentPos,
-                \amp, 0.2,
-                \gate, 1
-            ]).register;
-        };
-    };
-
-    // local button harmony synth
+    // --- 6. Local button harmony synth only ---
     ~playChordTone = { |buttonIdx|
         var voicing = [0, 2, 4, 6];
         var scaleDegrees = ~scales[~currentScale];
@@ -127,7 +115,11 @@ s.waitForBoot({
         noteMidi = rootMidi + semitone;
         ratio = (noteMidi - rootNote).midiratio;
 
-        ("playChordTone -> button: " ++ buttonIdx ++ " ratio: " ++ ratio).postln;
+        ("playChordTone -> button: " ++ buttonIdx
+            ++ " root: " ++ ~currentRoot
+            ++ " scale: " ++ ~currentScale
+            ++ " degree: " ++ ~currentDegree
+            ++ " ratio: " ++ ratio).postln;
 
         if(~localSynth.notNil && { ~localSynth.isPlaying }) {
             ~localSynth.set(\gate, 0);
@@ -145,7 +137,15 @@ s.waitForBoot({
         ]).register;
     };
 
-    // --- 5. P2PSC ONLY NETWORK ---
+    ~stopLocalNote = {
+        if(~localSynth.notNil) {
+            ~localSynth.set(\gate, 0);
+            ~localSynth = nil;
+            "stopped local synth".postln;
+        };
+    };
+
+    // --- 7. P2PSC network in, remote pygame OSC out ---
     fork {
         p = P2PSC();
         p.sync;
@@ -158,7 +158,6 @@ s.waitForBoot({
         "Peers:".postln;
         p.getPeers().postln;
 
-        // receive remote chord updates through P2PSC only
         p.addPath({ |msg|
             var root = msg[1];
             var scale = msg[2];
@@ -167,23 +166,27 @@ s.waitForBoot({
             ("received P2PSC /remoteChord on node " ++ ~host).postln;
             ("root: " ++ root ++ " scale: " ++ scale ++ " deg: " ++ deg).postln;
 
-            if(deg > 0) {
-                {
-                    ~playNote.value(root, scale, deg);
-                }.defer;
-            } {
-                {
-                    if(~activeSynth.notNil) {
-                        ~activeSynth.set(\gate, 0);
-                        ~activeSynth = nil;
-                        "stopped remote synth".postln;
-                    };
-                }.defer;
+            // UPDATE STATE ONLY — DO NOT TRIGGER SOUND HERE
+            ~currentRoot = root.asSymbol;
+            ~currentScale = scale.asSymbol;
+            ~currentDegree = deg;
+
+            "updated local chord state only".postln;
+
+            // forward to remote pygame machine
+            if(~pygameAddr.notNil) {
+                try {
+                    ~pygameAddr.sendMsg("/remoteChord", root, scale, deg);
+                    ("sent /remoteChord to pygame at " ++ ~pygameAddr.hostname ++ ":" ++ ~pygameAddr.port).postln;
+                } { |e|
+                    ("FAILED sending /remoteChord to pygame at " ++ ~pygameAddr.hostname ++ ":" ++ ~pygameAddr.port).postln;
+                    e.reportError;
+                };
             };
         }, "/remoteChord");
     };
 
-    // --- 6. Local button listener from pygame ---
+    // --- 8. Local button listener from pygame on THIS machine ---
     OSCdef(\localRelay, { |msg|
         var btnIdx = msg[1].asInteger;
         var isOn   = msg[2].asInteger;
@@ -193,13 +196,7 @@ s.waitForBoot({
         if(isOn == 1) {
             { ~playChordTone.value(btnIdx) }.defer;
         } {
-            {
-                if(~localSynth.notNil) {
-                    ~localSynth.set(\gate, 0);
-                    ~localSynth = nil;
-                    "stopped local synth".postln;
-                };
-            }.defer;
+            { ~stopLocalNote.value }.defer;
         };
     }, "/localChord");
 });
