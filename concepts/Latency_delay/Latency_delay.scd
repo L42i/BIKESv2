@@ -1,88 +1,141 @@
 s.waitForBoot({
+    var samplePath, who;
+
+    samplePath = thisProcess.nowExecutingPath.dirname +/+ "samples" +/+ "bell.wav";
+    ~buf = Buffer.read(s, samplePath);
+
+    SynthDef(\samplePlayerMono, { |out=0, bufnum=0, amp=0.8|
+        var sig, env;
+
+        env = EnvGen.kr(
+            Env.linen(0.005, BufDur.kr(bufnum), 0.01),
+            doneAction: 2
+        );
+
+        sig = PlayBuf.ar(
+            1,
+            bufnum,
+            BufRateScale.kr(bufnum)
+        );
+
+        Out.ar(out, (sig * env * amp) ! 2);
+    }).add;
+
+    SynthDef(\samplePlayerStereo, { |out=0, bufnum=0, amp=0.8|
+        var sig, env;
+
+        env = EnvGen.kr(
+            Env.linen(0.005, BufDur.kr(bufnum), 0.01),
+            doneAction: 2
+        );
+
+        sig = PlayBuf.ar(
+            2,
+            bufnum,
+            BufRateScale.kr(bufnum)
+        );
+
+        Out.ar(out, sig * env * amp);
+    }).add;
+
+    s.sync;
+
     // assign host + peer from machine name
     ~host = "";
     ~peer = "";
 
-    if(("whoami".unixCmdGetStdOut).contains("bikes1")) {
+    who = "whoami".unixCmdGetStdOut;
+
+    if(who.contains("bikes1")) {
         ~host = "1";
         ~peer = "2";
     };
-    if(("whoami".unixCmdGetStdOut).contains("bikes2")) {
+    if(who.contains("bikes2")) {
         ~host = "2";
         ~peer = "3";
     };
-    if(("whoami".unixCmdGetStdOut).contains("bikes3")) {
+    if(who.contains("bikes3")) {
         ~host = "3";
         ~peer = "4";
     };
-    if(("whoami".unixCmdGetStdOut).contains("bikes4")) {
+    if(who.contains("bikes4")) {
         ~host = "4";
         ~peer = "1";
     };
 
-    fork {
-        p = P2PSC();
-        p.sync;
-        p.setName(~host);
-        p.sync;
+    if(~host == "" or: { ~peer == "" }) {
+        ("Could not determine bike identity from whoami: " ++ who).error;
+    } {
+        ("Host is: " ++ ~host ++ " | Peer is: " ++ ~peer).postln;
 
-        ~lastRelayTime = nil;
-        ~jamRate = 1;
-        ~jamGap = 0.01;
-        ~relayAmp = 0.22;
+        fork {
+            p = P2PSC();
+            p.sync;
+            p.setName(~host);
+            p.sync;
 
-        // relay path
-        p.addPath({ |msg|
-            var freq = msg[1].asFloat;
-            var now = Main.elapsedTime;
+            ~lastRelayTime = nil;
+            ~jamRate = 1;
+            ~jamGap = 0.01;
+            ~relayAmp = 0.8;
 
-            /*
-            if(~lastRelayTime.notNil) {
-                ("[RELAY DELTA] " ++ (now - ~lastRelayTime)).postln;
-            };
-            ~lastRelayTime = now;
-            ("[RECEIVED RELAY] " ++ msg.asString ++ " at " ++ now).postln;
-            */
+            ~isPlaying = false;
+            ~playDelay = 0.25;
 
-            {
-                SinOsc.ar(84.midicps, 0, ~relayAmp) *
-                EnvGen.kr(
-                    Env.perc(0.001, 0.02),
-                    doneAction: 2
-                )
-            }.play;
+            // relay path
+            p.addPath({ |msg|
+                var freq = msg[1].asFloat;
 
-            // forward to assigned peer in ring
-            p.sendMsg("/" ++ ~peer ++ "/relay", freq);
-        }, "/relay");
-
-        // jam path
-        p.addPath({ |msg|
-            // do nothing
-        }, "/jam");
-
-        // jammer
-        ~jammer = Routine({
-            loop {
-                ~jamRate.do {
-                    p.sendMsg("/" ++ ~peer ++ "/jam", 9, 8, 7, 6, 5, 4, 3, 2);
+                if(~sampleSynth.notNil) {
+                    ~sampleSynth.free;
                 };
-                ~jamGap.wait;
-            }
-        }).play;
 
-        ("ready: host=" ++ ~host ++ " peer=" ++ ~peer).postln;
+                if(~buf.numChannels == 1) {
+                    ~sampleSynth = Synth(\samplePlayerMono, [
+                        \bufnum, ~buf.bufnum,
+                        \amp, ~relayAmp
+                    ]);
+                } {
+                    ~sampleSynth = Synth(\samplePlayerStereo, [
+                        \bufnum, ~buf.bufnum,
+                        \amp, ~relayAmp
+                    ]);
+                };
+
+                if(p.notNil) {
+                    p.sendMsg("/" ++ ~peer ++ "/relay", freq);
+                };
+
+            }, "/relay");
+
+            // jam path
+            p.addPath({ |msg|
+                // do nothing
+            }, "/jam");
+
+            ~jammer = Routine({
+                loop {
+                    ~jamRate.do {
+                        if(p.notNil) {
+                            p.sendMsg("/" ++ ~peer ++ "/jam", 9, 8, 7, 6, 5, 4, 3, 2);
+                        };
+                    };
+                    ~jamGap.wait;
+                }
+            }).play;
+
+            ("Bike " ++ ~host ++ " ready, forwarding to bike " ++ ~peer).postln;
+        };
     };
 });
 
-AppClock.sched(0, {
+AppClock.sched(1.0, {
     var min = 0.1;
     var max = 10;
     var skew = 0.2;
     var screen, winW, winH, sliderW, sliderH, buttonW, buttonH, centerX;
 
     screen = Window.screenBounds;
-
     winW = screen.width;
     winH = screen.height;
 
@@ -92,8 +145,7 @@ AppClock.sched(0, {
     sliderW = winW * 0.7;
     sliderH = 30;
     buttonW = winW * 0.3;
-    buttonH = 40;
-
+    buttonH = 120;
     centerX = winW / 2;
 
     Slider(w, Rect(
@@ -120,10 +172,14 @@ AppClock.sched(0, {
         buttonH
     ))
     .states_([
-        ["Send Relay 440", Color.black, Color.green]
+        ["Send Relay", Color.black, Color.green]
     ])
     .action_({
-        p.sendMsg("/" ++ ~peer ++ "/relay", 440);
-        ("Sent /" ++ ~peer ++ "/relay 440").postln;
+        if(p.notNil and: { ~peer != "" }) {
+            p.sendMsg("/" ++ ~peer ++ "/relay", 440);
+            ("Sent /" ++ ~peer ++ "/relay").postln;
+        } {
+            "P2PSC not ready or peer not set".postln;
+        };
     });
 });
