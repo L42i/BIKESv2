@@ -74,26 +74,28 @@ ROOT_W = 80
 SCALE_W = 160
 PAD_CLEARANCE = 20
 
-# Second dropdown anchored to far right
-SCALE_X = W - MARGIN - SCALE_W
+LEFT_DROP_X = MARGIN
+RIGHT_DROP_X = W - MARGIN - SCALE_W
 
-# Left pad offset only needs to clear the root dropdown now
-MIN_PAD_OFFSET_X = ROOT_W + PAD_CLEARANCE
-PAD_OFFSET_RATIO = 0.12
-PAD_OFFSET_X = max(MIN_PAD_OFFSET_X, int(W * PAD_OFFSET_RATIO))
+GRID_LEFT = LEFT_DROP_X + ROOT_W + PAD_CLEARANCE
+GRID_RIGHT = RIGHT_DROP_X - PAD_CLEARANCE
 
 def pad_rects():
-    gw = W - 2 * MARGIN - PAD_OFFSET_X
+    available_w = GRID_RIGHT - GRID_LEFT
     gh = H - HEADER - MARGIN
-    pw = (gw - 2 * GAP) // 3
+
+    pw = (available_w - 2 * GAP) // 3
     ph = (gh - GAP) // 2
+
+    grid_w = 3 * pw + 2 * GAP
+    start_x = GRID_LEFT + (available_w - grid_w) // 2
 
     rects = []
     for i in range(6):
         c, r = i % 3, i // 3
         rects.append(
             pygame.Rect(
-                MARGIN + PAD_OFFSET_X + c * (pw + GAP),
+                start_x + c * (pw + GAP),
                 HEADER + r * (ph + GAP),
                 pw,
                 ph
@@ -150,14 +152,14 @@ while running:
             clicked = False
 
             # Root dropdown
-            root_box = pygame.Rect(MARGIN, 16, ROOT_W, 36)
+            root_box = pygame.Rect(LEFT_DROP_X, 16, ROOT_W, 36)
             if root_box.collidepoint(mx, my):
                 root_open = not root_open
                 scale_open = False
                 clicked = True
             elif root_open:
                 for i, n in enumerate(NOTES):
-                    if pygame.Rect(MARGIN, 56 + i * 34, ROOT_W, 32).collidepoint(mx, my):
+                    if pygame.Rect(LEFT_DROP_X, 56 + i * 34, ROOT_W, 32).collidepoint(mx, my):
                         root = i
                         root_open = False
                         clicked = True
@@ -166,14 +168,14 @@ while running:
                     clicked = True
 
             # Scale dropdown
-            scale_box = pygame.Rect(SCALE_X, 16, SCALE_W, 36)
+            scale_box = pygame.Rect(RIGHT_DROP_X, 16, SCALE_W, 36)
             if not clicked and scale_box.collidepoint(mx, my):
                 scale_open = not scale_open
                 root_open = False
                 clicked = True
             elif not clicked and scale_open:
                 for i, s in enumerate(SCALES):
-                    if pygame.Rect(SCALE_X, 56 + i * 34, SCALE_W, 32).collidepoint(mx, my):
+                    if pygame.Rect(RIGHT_DROP_X, 56 + i * 34, SCALE_W, 32).collidepoint(mx, my):
                         scale = s
                         scale_open = False
                         clicked = True
@@ -199,11 +201,10 @@ while running:
     # --- Draw pads ---
     for i, rect in enumerate(rects):
         is_active = (active == i)
-        is_hover = rect.collidepoint(mx, my) and not is_active
         roman, note_str, qual = pad_label(root, scale, i)
 
-        bg = C_PRESS if is_active else (C_DROP_HL if is_hover else C_SURFACE)
-        bdr = C_PRESS if is_active else (C_MUTED if is_hover else C_BORDER)
+        bg = C_PRESS if is_active else C_SURFACE
+        bdr = C_PRESS if is_active else C_BORDER
 
         draw_rounded_rect(screen, bg, rect, 10, 2, bdr)
 
@@ -231,8 +232,8 @@ while running:
         screen.blit(q_txt, (rect.centerx - q_txt.get_width() // 2, rect.bottom - 22))
 
     # --- Draw dropdowns on top ---
-    draw_dropdown(screen, MARGIN, 16, ROOT_W, NOTES[root], NOTES, root_open)
-    draw_dropdown(screen, SCALE_X, 16, SCALE_W, scale, list(SCALES.keys()), scale_open)
+    draw_dropdown(screen, LEFT_DROP_X, 16, ROOT_W, NOTES[root], NOTES, root_open)
+    draw_dropdown(screen, RIGHT_DROP_X, 16, SCALE_W, scale, list(SCALES.keys()), scale_open)
 
     pygame.display.flip()
     clock.tick(60)
