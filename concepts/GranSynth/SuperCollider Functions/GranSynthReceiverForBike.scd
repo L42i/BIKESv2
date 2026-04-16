@@ -6,8 +6,9 @@ s.waitForBoot({
     var currentDur = 0.07;
     var currentPos = 0.1;
 
-    user = "whoami".unixCmdGetStdOut;
+    "hello, world".postln;
 
+    user = "whoami".unixCmdGetStdOut;
 
     if(user.contains("bikes2")) {
         ~host = "2";
@@ -24,10 +25,8 @@ s.waitForBoot({
                 filename = "PadSoundC4.wav";
                 rootNote = 60;
             } {
-                // FALLBACK FIX: Use the actual computer's network name
-                ~host = "hostname".unixCmdGetStdOut.replace("\n", "");
-                if(~host.isEmpty) { ~host = "127.0.0.1" }; // Safe localhost fallback
-
+                // fallback for testing
+                ~host = "2";
                 filename = "PadSoundC4.wav";
                 rootNote = 60;
             }
@@ -63,8 +62,12 @@ s.waitForBoot({
     s.sync;
 
     // --- 4. Logic & Context ---
-    ~noteMap = ( 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 );
-    ~scales  = (
+    ~noteMap = (
+        'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
+        'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
+    );
+
+    ~scales = (
         'Major':      [0, 2, 4, 5, 7, 9, 11],
         'Minor':      [0, 2, 3, 5, 7, 8, 10],
         'Dorian':     [0, 2, 3, 5, 7, 9, 10],
@@ -78,8 +81,10 @@ s.waitForBoot({
     ~currentScale = 'Major';
     ~currentDegree = 1;
 
+    // remote chord synth
     ~playNote = { |rootName, scaleName, degree|
         var rootMidi, noteMidi, ratio;
+
         ~currentRoot = rootName.asSymbol;
         ~currentScale = scaleName.asSymbol;
         ~currentDegree = degree.asInteger;
@@ -88,16 +93,24 @@ s.waitForBoot({
         noteMidi = rootMidi + ~scales[~currentScale][~currentDegree - 1];
         ratio = (noteMidi - rootNote).midiratio;
 
+        ("playNote -> root: " ++ rootName ++ " scale: " ++ scaleName ++ " degree: " ++ degree ++ " ratio: " ++ ratio).postln;
+
         if (~activeSynth.notNil && { ~activeSynth.isPlaying }) {
             ~activeSynth.set(\rate, ratio);
         } {
             ~activeSynth = Synth(\gs, [
-                \buf, b, \rate, ratio, \dens, currentDens,
-                \dur, currentDur, \pos, currentPos, \amp, 0.2, \gate, 1
+                \buf, b,
+                \rate, ratio,
+                \dens, currentDens,
+                \dur, currentDur,
+                \pos, currentPos,
+                \amp, 0.2,
+                \gate, 1
             ]).register;
         };
     };
 
+    // local button harmony synth
     ~playChordTone = { |buttonIdx|
         var voicing = [0, 2, 4, 6];
         var scaleDegrees = ~scales[~currentScale];
@@ -114,15 +127,25 @@ s.waitForBoot({
         noteMidi = rootMidi + semitone;
         ratio = (noteMidi - rootNote).midiratio;
 
+        ("playChordTone -> button: " ++ buttonIdx ++ " ratio: " ++ ratio).postln;
+
+        if(~localSynth.notNil && { ~localSynth.isPlaying }) {
+            ~localSynth.set(\gate, 0);
+            ~localSynth = nil;
+        };
+
         ~localSynth = Synth(\gs, [
-            \buf, b, \rate, ratio, \dens, currentDens,
-            \dur, currentDur, \pos, currentPos, \amp, 0.2, \gate, 1
+            \buf, b,
+            \rate, ratio,
+            \dens, currentDens,
+            \dur, currentDur,
+            \pos, currentPos,
+            \amp, 0.2,
+            \gate, 1
         ]).register;
     };
 
-
-// --- 5. Network Discovery ---
-    // We leave P2PSC running purely so the Host can discover this node's name
+    // --- 5. P2PSC ONLY NETWORK ---
     fork {
         p = P2PSC();
         p.sync;
@@ -130,42 +153,54 @@ s.waitForBoot({
         p.sync;
         0.2.wait;
         p.sync;
-        "? P2PSC Receiver Ready! Node assigned as: %".format(~host).postln;
+
+        ("✅ P2PSC Receiver Ready! Node: " ++ ~host).postln;
+        "Peers:".postln;
+        p.getPeers().postln;
+
+        // receive remote chord updates through P2PSC only
+        p.addPath({ |msg|
+            var root = msg[1];
+            var scale = msg[2];
+            var deg = msg[3].asInteger;
+
+            ("received P2PSC /remoteChord on node " ++ ~host).postln;
+            ("root: " ++ root ++ " scale: " ++ scale ++ " deg: " ++ deg).postln;
+
+            if(deg > 0) {
+                {
+                    ~playNote.value(root, scale, deg);
+                }.defer;
+            } {
+                {
+                    if(~activeSynth.notNil) {
+                        ~activeSynth.set(\gate, 0);
+                        ~activeSynth = nil;
+                        "stopped remote synth".postln;
+                    };
+                }.defer;
+            };
+        }, "/remoteChord");
     };
 
-    // --- 6. OSC Listeners ---
-
-    // A. Listen for the Host's remote chord updates over raw UDP
-    OSCdef(\remoteChordListener, { |msg|
-        var root = msg[1];
-        var scale = msg[2];
-        var deg = msg[3].asInteger;
-
-        if(deg > 0) {
-            // Silently update the musical context, DO NOT trigger a synth
-            ~currentRoot = root.asSymbol;
-            ~currentScale = scale.asSymbol;
-            ~currentDegree = deg;
-        } {
-            // deg == 0: The Host turned off the chord.
-            // Kill the local harmony if it is currently playing so it doesn't drone on alone.
-            {
-                if(~localSynth.notNil) { ~localSynth.set(\gate, 0); ~localSynth = nil; };
-            }.defer;
-        };
-    }, "/remoteChord");
-
-    // B. Listen for Pygame's local harmony buttons
+    // --- 6. Local button listener from pygame ---
     OSCdef(\localRelay, { |msg|
         var btnIdx = msg[1].asInteger;
         var isOn   = msg[2].asInteger;
+
+        ("localRelay -> btnIdx: " ++ btnIdx ++ " isOn: " ++ isOn).postln;
 
         if(isOn == 1) {
             { ~playChordTone.value(btnIdx) }.defer;
         } {
             {
-                if(~localSynth.notNil) { ~localSynth.set(\gate, 0); ~localSynth = nil; };
+                if(~localSynth.notNil) {
+                    ~localSynth.set(\gate, 0);
+                    ~localSynth = nil;
+                    "stopped local synth".postln;
+                };
             }.defer;
         };
     }, "/localChord");
-}))
+});
+)

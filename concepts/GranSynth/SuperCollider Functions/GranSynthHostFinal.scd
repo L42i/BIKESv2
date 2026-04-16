@@ -1,21 +1,18 @@
-
 (
 s.waitForBoot({
-    // --- 1. Variables ---
     var path, rootNote;
     var currentDens = 200;
     var currentDur = 0.07;
     var currentPos = 0.1;
 
-    ~host = "1"; // Hardcoded for bikes1
+    ~host = "1";   // host bike
     rootNote = 36;
 
     ~absolutePrefix = thisProcess.nowExecutingPath.dirname.dirname;
     path = ~absolutePrefix +/+ "Audio Files" +/+ "AtmosphericC2.wav";
     b = Buffer.readChannel(s, path, channels: [0]);
 
-    // --- 2. SynthDef ---
-    SynthDef.new(\gs, {
+    SynthDef(\gs, {
         arg sync=0, dens=60, dur=0.4, durRand=0.5, durHz=0.3, buf=0,
         rate=1, pos=0.1, posSpeed=0.1, posRand=0.05,
         grainEnv=(-1), pan=0, panHz=0.1, panRand=0,
@@ -37,9 +34,12 @@ s.waitForBoot({
 
     s.sync;
 
-    // --- 3. Context Lookups ---
-    ~noteMap = ( 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 );
-    ~scales  = (
+    ~noteMap = (
+        'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
+        'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
+    );
+
+    ~scales = (
         'Major':      [0, 2, 4, 5, 7, 9, 11],
         'Minor':      [0, 2, 3, 5, 7, 8, 10],
         'Dorian':     [0, 2, 3, 5, 7, 9, 10],
@@ -58,13 +58,17 @@ s.waitForBoot({
             ~activeSynth.set(\rate, ratio);
         } {
             ~activeSynth = Synth(\gs, [
-                \buf, b, \rate, ratio, \dens, currentDens,
-                \dur, currentDur, \pos, currentPos, \amp, 0.2, \gate, 1
+                \buf, b,
+                \rate, ratio,
+                \dens, currentDens,
+                \dur, currentDur,
+                \pos, currentPos,
+                \amp, 0.2,
+                \gate, 1
             ]).register;
         };
     };
 
-    // --- 4. Network ---
     fork {
         p = P2PSC();
         p.sync;
@@ -75,57 +79,36 @@ s.waitForBoot({
         "✅ HOST P2PSC Ready! Node: %".format(~host).postln;
     };
 
-    // --- 5. Broadcast to Network ---
     OSCdef(\pygameRelay, { |msg|
-        var root    = msg[1];
-        var scale   = msg[2];
-        var degree  = msg[3];
+        var root   = msg[1];
+        var scale  = msg[2];
+        var degree = msg[3].asInteger;
+        var targets = ["2", "3", "4"];
 
-        /// Map P2PSC string identities to actual network-resolvable hostnames/IPs
-
-        var networkMap = (
-
-            '2': "bikes2.local",
-
-            '3': "bikes3.local",
-
-            '4': "bikes4.local"
-        );
-
-        if(degree.asInteger > 0) {
-
+        if(degree > 0) {
             { ~playNote.value(root, scale, degree) }.defer;
-
         } {
-
-            if(~activeSynth.notNil) { ~activeSynth.set(\gate, 0); ~activeSynth = nil; };
-
+            if(~activeSynth.notNil) {
+                ~activeSynth.set(\gate, 0);
+                ~activeSynth = nil;
+            };
         };
 
         if(p.notNil) {
-
             fork {
-                p.getPeers.do { |peerName|
-                    var peerStr = peerName.asString;
-                    // FIX: Use .asSymbol to correctly look up the dictionary key
-                    var targetHost = networkMap[peerStr.asSymbol] ?? { peerStr };
-                    if(peerStr.notEmpty and: { peerStr != ~host.asString }) {
-
+                targets.do { |target|
+                    if(target != ~host) {
                         try {
-
-                            NetAddr(targetHost, 57121).sendMsg("/remoteChord", root, scale, degree);
-
-                            NetAddr(targetHost, 57120).sendMsg("/remoteChord", root, scale, degree);
-
-                        } { |e| ("Failed to reach " ++ targetHost).postln; };
-
+                            p.sendMsg("/" ++ target ++ "/remoteChord", root, scale, degree);
+                            ("sent P2PSC chord to " ++ target).postln;
+                        } { |e|
+                            ("Failed P2PSC send to " ++ target).postln;
+                            e.reportError;
+                        };
                     };
-
                 };
-
             };
-
         };
-	}, "/chord");
+    }, "/chord");
 });
 )

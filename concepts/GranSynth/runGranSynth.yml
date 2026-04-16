@@ -71,38 +71,6 @@
       pause:
         seconds: 2
 
-    # ======================
-    # HOST NODE (first bike)
-    # ======================
-    - name: Launch Python + SC (Host node)
-      when: inventory_hostname == groups['bikes'][0]
-      block:
-
-        - name: Launch PythonHost
-          shell: |
-            cd "{{ remote_app_dir }}" && \
-            sudo -u "{{ gui_user }}" bash -c '
-              DISPLAY=:0 \
-              XAUTHORITY="/home/{{ gui_user }}/.Xauthority" \
-              nohup python3 -u "{{ remote_app_dir }}/Python Interfaces/PythonHost.py" \
-              > "{{ remote_app_dir }}/logs/PythonHost.log" 2>&1 &
-            '
-          async: 2592000
-          poll: 0
-
-        - name: Run GranSynthHostFinal.scd
-          become: false
-          shell: |
-            cd "{{ remote_app_dir }}" && \
-            env \
-              HOME="/home/{{ ansible_user }}" \
-              DISPLAY=":0" \
-              XAUTHORITY="/home/{{ ansible_user }}/.Xauthority" \
-              nohup sclang "{{ remote_app_dir }}/SuperCollider Functions/GranSynthHostFinal.scd" \
-              > "{{ remote_app_dir }}/logs/GranSynthHostFinal.log" 2>&1 &
-          async: 2592000
-          poll: 0
-
     # =========================
     # RECEIVER NODES (all others)
     # =========================
@@ -132,5 +100,37 @@
               XAUTHORITY="/home/{{ ansible_user }}/.Xauthority" \
               nohup sclang "{{ remote_app_dir }}/SuperCollider Functions/GranSynthReceiverForBike.scd" \
               > "{{ remote_app_dir }}/logs/GranSynthReceiver.log" 2>&1 &
+          async: 2592000
+          poll: 0
+
+    # ======================
+    # HOST NODE (first bike)
+    # ======================
+    - name: Launch Python + SC (Host node)
+      when: inventory_hostname == groups['bikes'][0]
+      block:
+
+        - name: Launch PythonHost
+          shell: |
+            cd "{{ remote_app_dir }}" && \
+            sudo -u "{{ gui_user }}" bash -c '
+              DISPLAY=:0 \
+              XAUTHORITY="/home/{{ gui_user }}/.Xauthority" \
+              nohup python3 -u "{{ remote_app_dir }}/Python Interfaces/PythonHost.py" \
+              > "{{ remote_app_dir }}/logs/PythonHost.log" 2>&1 &
+            '
+          async: 2592000
+          poll: 0
+
+        - name: Run GranSynthHostFinal.scd
+          become: false
+          shell: |
+            cd "{{ remote_app_dir }}" && \
+            env \
+              HOME="/home/{{ ansible_user }}" \
+              DISPLAY=":0" \
+              XAUTHORITY="/home/{{ ansible_user }}/.Xauthority" \
+              nohup sclang "{{ remote_app_dir }}/SuperCollider Functions/GranSynthHostFinal.scd" \
+              > "{{ remote_app_dir }}/logs/GranSynthHostFinal.log" 2>&1 &
           async: 2592000
           poll: 0
