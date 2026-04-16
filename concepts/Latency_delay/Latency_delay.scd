@@ -131,7 +131,7 @@ s.waitForBoot({
 
 AppClock.sched(1.0, {
     var min = 0.1;
-    var max = 10;
+    var max = 1000;
     var skew = 0.2;
     var screen, winW, winH, sliderW, sliderH, buttonW, buttonH, centerX;
 
