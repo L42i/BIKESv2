@@ -1,5 +1,4 @@
 import pygame
-import sys
 from pythonosc import udp_client
 
 # --- OSC ---
@@ -60,35 +59,35 @@ font_drop  = pygame.font.SysFont("Arial", 16, bold=True)
 font_hint  = pygame.font.SysFont("Arial", 13)
 
 # State
-root = 0
-scale = "Major"
+root   = 0
+scale  = "Major"
 active = -1
-root_open = False
-scale_open = False
 
 HEADER = 68
 MARGIN = 16
-GAP = 8
+GAP    = 8
 
-ROOT_W = 80
-SCALE_W = 160
-PAD_CLEARANCE = 20
+ROOT_BTN_W   = 80
+MODE_BTN_W   = 160
+SIDE_GAP     = 12
+PAD_CLEAR    = 16
 
-LEFT_DROP_X = MARGIN
-RIGHT_DROP_X = W - MARGIN - SCALE_W
+LEFT_COL_W   = ROOT_BTN_W
+RIGHT_COL_W  = MODE_BTN_W
 
-GRID_LEFT = LEFT_DROP_X + ROOT_W + PAD_CLEARANCE
-GRID_RIGHT = RIGHT_DROP_X - PAD_CLEARANCE
+SCALE_NAMES = list(SCALES.keys())
 
 def pad_rects():
-    available_w = GRID_RIGHT - GRID_LEFT
-    gh = H - HEADER - MARGIN
+    grid_left  = MARGIN + LEFT_COL_W + SIDE_GAP + PAD_CLEAR
+    grid_right = W - MARGIN - RIGHT_COL_W - SIDE_GAP - PAD_CLEAR
+    available_w = grid_right - grid_left
 
+    gh = H - HEADER - MARGIN
     pw = (available_w - 2 * GAP) // 3
     ph = (gh - GAP) // 2
 
     grid_w = 3 * pw + 2 * GAP
-    start_x = GRID_LEFT + (available_w - grid_w) // 2
+    start_x = grid_left + (available_w - grid_w) // 2
 
     rects = []
     for i in range(6):
@@ -103,28 +102,34 @@ def pad_rects():
         )
     return rects
 
+def root_button_rects():
+    rects = []
+    btn_w = ROOT_BTN_W
+    btn_h = 32
+    x = MARGIN
+    y0 = 16
+    gap_y = 2
+
+    for i in range(len(NOTES)):
+        rects.append(pygame.Rect(x, y0 + i * (btn_h + gap_y), btn_w, btn_h))
+    return rects
+
+def mode_button_rects():
+    rects = []
+    btn_w = MODE_BTN_W
+    btn_h = 32
+    x = W - MARGIN - btn_w
+    y0 = 16
+    gap_y = 2
+
+    for i in range(len(SCALE_NAMES)):
+        rects.append(pygame.Rect(x, y0 + i * (btn_h + gap_y), btn_w, btn_h))
+    return rects
+
 def draw_rounded_rect(surf, color, rect, radius, border=0, border_color=None):
     pygame.draw.rect(surf, color, rect, border_radius=radius)
     if border and border_color:
         pygame.draw.rect(surf, border_color, rect, border, border_radius=radius)
-
-def draw_dropdown(surf, x, y, w, label, options, is_open):
-    box = pygame.Rect(x, y, w, 36)
-    draw_rounded_rect(surf, C_DROP_BG, box, 6, 2, C_BORDER)
-    lbl = font_drop.render(label + "  ▾", True, C_INK)
-    surf.blit(lbl, (x + 10, y + 8))
-
-    if is_open:
-        oh = len(options) * 34
-        panel = pygame.Rect(x, y + 38, w, oh)
-        draw_rounded_rect(surf, C_DROP_BG, panel, 6, 1, C_BORDER)
-
-        mx, my = pygame.mouse.get_pos()
-        for i, opt in enumerate(options):
-            r = pygame.Rect(x + 2, y + 40 + i * 34, w - 4, 32)
-            if r.collidepoint(mx, my):
-                draw_rounded_rect(surf, C_DROP_HL, r, 4)
-            surf.blit(font_drop.render(opt, True, C_INK), (r.x + 8, r.y + 7))
 
 def select_pad(i):
     global active
@@ -138,54 +143,43 @@ def select_pad(i):
 running = True
 while running:
     screen.fill(C_BG)
-    mx, my = pygame.mouse.get_pos()
     rects = pad_rects()
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             running = False
 
-        elif event.type == pygame.MOUSEBUTTONDOWN:
+        elif event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.FINGERDOWN:
             clicked = False
 
-            # Root dropdown
-            root_box = pygame.Rect(LEFT_DROP_X, 16, ROOT_W, 36)
-            if root_box.collidepoint(mx, my):
-                root_open = not root_open
-                scale_open = False
-                clicked = True
-            elif root_open:
-                for i, n in enumerate(NOTES):
-                    if pygame.Rect(LEFT_DROP_X, 56 + i * 34, ROOT_W, 32).collidepoint(mx, my):
-                        root = i
-                        root_open = False
-                        clicked = True
-                if not clicked:
-                    root_open = False
-                    clicked = True
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                tx, ty = event.pos
+            else:
+                tx = int(event.x * W)
+                ty = int(event.y * H)
 
-            # Scale dropdown
-            scale_box = pygame.Rect(RIGHT_DROP_X, 16, SCALE_W, 36)
-            if not clicked and scale_box.collidepoint(mx, my):
-                scale_open = not scale_open
-                root_open = False
-                clicked = True
-            elif not clicked and scale_open:
-                for i, s in enumerate(SCALES):
-                    if pygame.Rect(RIGHT_DROP_X, 56 + i * 34, SCALE_W, 32).collidepoint(mx, my):
-                        scale = s
-                        scale_open = False
-                        clicked = True
-                if not clicked:
-                    scale_open = False
+            # Root note buttons
+            for i, rect in enumerate(root_button_rects()):
+                if rect.collidepoint(tx, ty):
+                    root = i
                     clicked = True
+                    break
 
-            if not clicked and not root_open and not scale_open:
+            # Mode buttons
+            if not clicked:
+                for i, rect in enumerate(mode_button_rects()):
+                    if rect.collidepoint(tx, ty):
+                        scale = SCALE_NAMES[i]
+                        clicked = True
+                        break
+
+            # Main pads
+            if not clicked:
                 for i, rect in enumerate(rects):
-                    if rect.collidepoint(mx, my):
+                    if rect.collidepoint(tx, ty):
                         select_pad(i)
                         clicked = True
                         break
@@ -198,12 +192,51 @@ while running:
                 if event.key == key:
                     select_pad(idx)
 
+    # --- Draw root note buttons ---
+    for i, rect in enumerate(root_button_rects()):
+        is_active = (root == i)
+
+        bg = C_PRESS if is_active else C_SURFACE
+        bdr = C_PRESS if is_active else C_BORDER
+        txt_col = (255, 255, 255) if is_active else C_INK
+
+        draw_rounded_rect(screen, bg, rect, 6, 2, bdr)
+
+        txt = font_drop.render(NOTES[i], True, txt_col)
+        screen.blit(
+            txt,
+            (
+                rect.centerx - txt.get_width() // 2,
+                rect.centery - txt.get_height() // 2
+            )
+        )
+
+    # --- Draw mode buttons ---
+    for i, rect in enumerate(mode_button_rects()):
+        mode_name = SCALE_NAMES[i]
+        is_active = (scale == mode_name)
+
+        bg = C_PRESS if is_active else C_SURFACE
+        bdr = C_PRESS if is_active else C_BORDER
+        txt_col = (255, 255, 255) if is_active else C_INK
+
+        draw_rounded_rect(screen, bg, rect, 6, 2, bdr)
+
+        txt = font_drop.render(mode_name, True, txt_col)
+        screen.blit(
+            txt,
+            (
+                rect.centerx - txt.get_width() // 2,
+                rect.centery - txt.get_height() // 2
+            )
+        )
+
     # --- Draw pads ---
     for i, rect in enumerate(rects):
         is_active = (active == i)
         roman, note_str, qual = pad_label(root, scale, i)
 
-        bg = C_PRESS if is_active else C_SURFACE
+        bg  = C_PRESS if is_active else C_SURFACE
         bdr = C_PRESS if is_active else C_BORDER
 
         draw_rounded_rect(screen, bg, rect, 10, 2, bdr)
@@ -214,7 +247,7 @@ while running:
         screen.blit(r_txt, (rect.x + 14, rect.y + 12))
 
         # Key number hint (top-right)
-        h_txt = font_hint.render(str(i + 1), True, C_MUTED if not is_active else (80, 100, 90))
+        h_txt = font_hint.render(str(i+1), True, C_MUTED if not is_active else (80, 100, 90))
         screen.blit(h_txt, (rect.right - 20, rect.y + 12))
 
         # Note name (centre)
@@ -222,8 +255,10 @@ while running:
         n_txt = font_note.render(note_str, True, n_col)
         screen.blit(
             n_txt,
-            (rect.centerx - n_txt.get_width() // 2,
-             rect.centery - n_txt.get_height() // 2 + 4)
+            (
+                rect.centerx - n_txt.get_width() // 2,
+                rect.centery - n_txt.get_height() // 2 + 4
+            )
         )
 
         # Quality label (bottom-centre)
@@ -231,12 +266,8 @@ while running:
         q_txt = font_qual.render(qual, True, q_col)
         screen.blit(q_txt, (rect.centerx - q_txt.get_width() // 2, rect.bottom - 22))
 
-    # --- Draw dropdowns on top ---
-    draw_dropdown(screen, LEFT_DROP_X, 16, ROOT_W, NOTES[root], NOTES, root_open)
-    draw_dropdown(screen, RIGHT_DROP_X, 16, SCALE_W, scale, list(SCALES.keys()), scale_open)
-
     pygame.display.flip()
     clock.tick(60)
 
 pygame.quit()
-sys.exit()
+
