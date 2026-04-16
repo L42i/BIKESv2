@@ -82,29 +82,42 @@ s.waitForBoot({
             ~isPlaying = false;
             ~playDelay = 0.25;
 
+            // new timing controls
+            ~waitBeforePlay = 0.05;
+            ~waitBeforeForward = 0.05;
+
             // relay path
             p.addPath({ |msg|
                 var freq = msg[1].asFloat;
 
-                if(~sampleSynth.notNil) {
-                    ~sampleSynth.free;
-                };
+                Routine({
+                    // wait after receiving, before playing
+                    ~waitBeforePlay.wait;
 
-                if(~buf.numChannels == 1) {
-                    ~sampleSynth = Synth(\samplePlayerMono, [
-                        \bufnum, ~buf.bufnum,
-                        \amp, ~relayAmp
-                    ]);
-                } {
-                    ~sampleSynth = Synth(\samplePlayerStereo, [
-                        \bufnum, ~buf.bufnum,
-                        \amp, ~relayAmp
-                    ]);
-                };
+                    if(~sampleSynth.notNil) {
+                        ~sampleSynth.free;
+                    };
 
-                if(p.notNil) {
-                    p.sendMsg("/" ++ ~peer ++ "/relay", freq);
-                };
+                    if(~buf.numChannels == 1) {
+                        ~sampleSynth = Synth(\samplePlayerMono, [
+                            \bufnum, ~buf.bufnum,
+                            \amp, ~relayAmp
+                        ]);
+                    } {
+                        ~sampleSynth = Synth(\samplePlayerStereo, [
+                            \bufnum, ~buf.bufnum,
+                            \amp, ~relayAmp
+                        ]);
+                    };
+
+                    // wait after playback starts, before forwarding
+                    ~waitBeforeForward.wait;
+
+                    if(p.notNil) {
+                        p.sendMsg("/" ++ ~peer ++ "/relay", freq);
+                        ("Forwarded to bike " ++ ~peer).postln;
+                    };
+                }).play(AppClock);
 
             }, "/relay");
 
@@ -130,10 +143,10 @@ s.waitForBoot({
 });
 
 AppClock.sched(1.0, {
-    var min = 0.1;
-    var max = 10;
+    var min = 1;
+    var max = 250;
     var skew = 0.2;
-    var screen, winW, winH, sliderW, sliderH, buttonW, buttonH, centerX;
+    var screen, winW, winH, sliderW, sliderH, buttonW, buttonH, centerX, labelW, labelH;
 
     screen = Window.screenBounds;
     winW = screen.width;
@@ -143,14 +156,16 @@ AppClock.sched(1.0, {
     w.fullScreen;
 
     sliderW = winW * 0.7;
-    sliderH = 30;
+    sliderH = 60;
     buttonW = winW * 0.3;
     buttonH = 120;
     centerX = winW / 2;
+    labelW = 300;
+    labelH = 60;
 
     Slider(w, Rect(
         centerX - (sliderW / 2),
-        (winH / 2) - 50,
+        (winH / 2) - 80,
         sliderW,
         sliderH
     ))
@@ -165,6 +180,16 @@ AppClock.sched(1.0, {
         ("jamRate: " ++ ~jamRate).postln;
     });
 
+    StaticText(w, Rect(
+        centerX - (labelW / 2),
+        (winH / 2) - 140,
+        labelW,
+        labelH
+    ))
+    .string_("Jam Rate Control")
+    .align_(\center)
+    .font_(Font("Helvetica", 20));
+
     Button(w, Rect(
         centerX - (buttonW / 2),
         (winH / 2) + 10,
@@ -174,6 +199,7 @@ AppClock.sched(1.0, {
     .states_([
         ["Send Relay", Color.black, Color.green]
     ])
+    .font_(Font("Helvetica", 20))
     .action_({
         if(p.notNil and: { ~peer != "" }) {
             p.sendMsg("/" ++ ~peer ++ "/relay", 440);
