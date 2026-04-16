@@ -74,7 +74,7 @@
           HOME="/home/{{ ansible_user }}" \
           DISPLAY=":0" \
           XAUTHORITY="/home/{{ ansible_user }}/.Xauthority" \
-          nohup sclang "{{ remote_app_dir }}/GUIListener.scd" "{{ soundscape }}" \
+          nohup sclang "{{ remote_app_dir }}/Latency_delay.scd" \
           > "{{ remote_app_dir }}/logs/GUIListener.log" 2>&1 &
       async: 2592000
       poll: 0
