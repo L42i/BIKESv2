@@ -81,25 +81,51 @@ s.waitForBoot({
         var scale   = msg[2];
         var degree  = msg[3];
 
+        /// Map P2PSC string identities to actual network-resolvable hostnames/IPs
+
+        var networkMap = (
+
+            '2': "bikes2.local",
+
+            '3': "bikes3.local",
+
+            '4': "bikes4.local"
+        );
+
         if(degree.asInteger > 0) {
+
             { ~playNote.value(root, scale, degree) }.defer;
+
         } {
+
             if(~activeSynth.notNil) { ~activeSynth.set(\gate, 0); ~activeSynth = nil; };
+
         };
 
         if(p.notNil) {
+
             fork {
                 p.getPeers.do { |peerName|
                     var peerStr = peerName.asString;
+                    // FIX: Use .asSymbol to correctly look up the dictionary key
+                    var targetHost = networkMap[peerStr.asSymbol] ?? { peerStr };
                     if(peerStr.notEmpty and: { peerStr != ~host.asString }) {
+
                         try {
-                            NetAddr(peerStr, 57121).sendMsg("/remoteChord", root, scale, degree);
-                            NetAddr(peerStr, 57120).sendMsg("/remoteChord", root, scale, degree);
-                        } { |e| ("Failed to reach " ++ peerStr).postln; };
+
+                            NetAddr(targetHost, 57121).sendMsg("/remoteChord", root, scale, degree);
+
+                            NetAddr(targetHost, 57120).sendMsg("/remoteChord", root, scale, degree);
+
+                        } { |e| ("Failed to reach " ++ targetHost).postln; };
+
                     };
+
                 };
+
             };
+
         };
-    }, "/chord");
+	}, "/chord");
 });
 )
