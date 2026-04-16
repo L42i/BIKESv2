@@ -3,6 +3,12 @@
   hosts: bikes
   gather_facts: false
   become: true
+
+  vars:
+    remote_app_dir: "/home/{{ ansible_user }}/Desktop/BIKES/concepts/Latency_delay"
+    p2psc_dir: "/home/{{ ansible_user }}/.local/bin/p2psc"
+    gui_user: "{{ ansible_user }}"
+
   
   tasks:
     - name: Show resolved remote app directory
@@ -31,6 +37,10 @@
 
     - name: Kill all jackd things
       command: killall -9 jackd
+      ignore_errors: true
+
+    - name: Kill all python3 things
+      command: killall -9 python3
       ignore_errors: true
 
     - name: Start jack
