@@ -13,6 +13,7 @@
         # Optional parameters for rsync behavior:
         # archive mode (recursive, preserves permissions, ownership, timestamps, etc.)
         archive: true 
+        times: false
         # compresses file data during the transfer
         compress: true 
         # makes rsync delete files in the dest that are not in the src

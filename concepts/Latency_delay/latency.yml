@@ -46,7 +46,7 @@
     - name: Start jack
       become: false
       shell: |
-        jackd -d alsa -d hw:2,0 > "{{ remote_app_dir }}/logs/jackd.log" 2>&1 &
+        jackd -d alsa -d hw:2,0
       async: 2592000
       poll: 0
     
@@ -57,7 +57,7 @@
     - name: Start p2psc
       become: false
       shell: |
-        {{ p2psc_dir }} > "{{ remote_app_dir }}/logs/p2psc.log" 2>&1 &
+        {{ p2psc_dir }}
       async: 2592000
       poll: 0
 
@@ -75,7 +75,6 @@
           DISPLAY=":0" \
           XAUTHORITY="/home/{{ ansible_user }}/.Xauthority" \
           nohup sclang "{{ remote_app_dir }}/Latency_delay.scd" \
-          > "{{ remote_app_dir }}/logs/GUIListener.log" 2>&1 &
       async: 2592000
       poll: 0
 
